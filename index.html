@@ -452,7 +452,7 @@
 
   // Googleスプレッドシート連携用のWebアプリURL（.../exec で終わるもの）
   // 「google-apps-script.gs」の手順でデプロイしたあと、ここに貼り付けてください
-  var WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxp1xN2WSmQS56oYn3LNZBHt8h9D-cJchP9Wkfhxh_Muj7pKPNF7WD7qUZVDtcT3lsDSQ/exec"; // 例: "https://script.google.com/macros/s/xxxxxxxx/exec"
+  var WEBAPP_URL = "https://script.google.com/macros/s/AKfycbz95ngSS5b6n9RG5416Uof8kMXP_a2vN--B8VKUiLhpytoYuIPWDkM-y9vVwAW1-8UDrA/exec" // 例: "https://script.google.com/macros/s/xxxxxxxx/exec"
 
   // 初期表示データ（WEBAPP_URL未設定時、または通信に失敗した場合に表示）
   var DEFAULT_DATA = {
@@ -613,23 +613,32 @@
     return data;
   }
 
-  async function loadData() {
+  // opts.silent = true の場合、失敗してもトーストを出さない（呼び出し元で文言を組み立てる）
+  // 戻り値: 読み込みに成功したかどうか（true/false）
+  async function loadData(opts) {
+    opts = opts || {};
     if (!isConfigured) {
-      showToast("Googleスプレッドシート未接続のため、サンプルデータを表示しています");
+      if (!opts.silent) showToast("Googleスプレッドシート未接続のため、サンプルデータを表示しています");
       sortByOrder_();
       render();
-      return;
+      return true;
     }
     try {
       var data = await apiGet();
       if (Array.isArray(data.links)) state.links = data.links;
       if (Array.isArray(data.announcements)) state.announcements = data.announcements;
+      sortByOrder_();
+      render();
+      return true;
     } catch (e) {
-      console.warn("読み込みエラー（サンプルデータを表示します）:", e);
-      showToast("スプレッドシートの読み込みに失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+      console.warn("読み込みエラー:", e);
+      sortByOrder_();
+      render(); // 直前の表示内容のまま再描画（新しいデータは反映されない点に注意）
+      if (!opts.silent) {
+        showToast("スプレッドシートの読み込みに失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+      }
+      return false;
     }
-    sortByOrder_();
-    render();
   }
 
   function sortByOrder_() {
@@ -641,6 +650,26 @@
   function nextOrder_(list) {
     if (!list.length) return 1;
     return Math.max.apply(null, list.map(function (x) { return Number(x.order) || 0; })) + 1;
+  }
+
+  // apiPost成功後、再読み込みまでをまとめて行い、状況に応じて分かりやすいメッセージを出す
+  //   ・書き込み成功 + 再読み込み成功 → successMsg
+  //   ・書き込み成功 + 再読み込み失敗 → 「保存はできたが最新表示への反映に失敗した」旨を明示
+  //   ・書き込み失敗                 → failMsgPrefix + エラー内容
+  async function runWrite_(actionPromiseFn, successMsg, failMsgPrefix) {
+    try {
+      await actionPromiseFn();
+    } catch (e) {
+      showToast(failMsgPrefix + "：" + (e && e.message ? e.message : "不明なエラー"));
+      await loadData({ silent: true });
+      return;
+    }
+    var reloaded = await loadData({ silent: true });
+    if (reloaded) {
+      showToast(successMsg);
+    } else {
+      showToast(successMsg + "（ただし最新データの再表示に失敗しました。画面を更新してください）");
+    }
   }
 
   // 表示順の入れ替え（dir: -1で上へ、+1で下へ）
@@ -661,14 +690,10 @@
     }
 
     showToast("並び替えています…");
-    try {
+    await runWrite_(async function () {
       await apiPost(updateAction, Object.assign({}, a, { order: orderB }));
       await apiPost(updateAction, Object.assign({}, b, { order: orderA }));
-      showToast("並び替えました");
-    } catch (e) {
-      showToast("並び替えに失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-    }
-    await loadData();
+    }, "並び替えました", "並び替えに失敗しました");
   }
 
   // ==============================================================
@@ -783,13 +808,9 @@
       askConfirm('お知らせ「' + (a ? a.title : "") + '」を削除しますか？').then(async function (ok) {
         if (!ok) return;
         showToast("削除しています…");
-        try {
-          await apiPost("deleteAnnouncement", { id: btn.dataset.delAnn });
-          showToast("削除しました");
-        } catch (e) {
-          showToast("削除に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-        }
-        await loadData();
+        await runWrite_(function () {
+          return apiPost("deleteAnnouncement", { id: btn.dataset.delAnn });
+        }, "削除しました", "削除に失敗しました");
       });
       return;
     }
@@ -798,13 +819,9 @@
       askConfirm('「' + (l ? l.title : "") + '」を削除しますか？').then(async function (ok) {
         if (!ok) return;
         showToast("削除しています…");
-        try {
-          await apiPost("deleteLink", { id: btn.dataset.delLink });
-          showToast("削除しました");
-        } catch (e) {
-          showToast("削除に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-        }
-        await loadData();
+        await runWrite_(function () {
+          return apiPost("deleteLink", { id: btn.dataset.delLink });
+        }, "削除しました", "削除に失敗しました");
       });
       return;
     }
@@ -836,17 +853,11 @@
       var date = dateEl.value, title = titleEl.value.trim(), body = bodyEl.value.trim();
       if (!date || !title || !body) { showError("お知らせの「日付」「タイトル」「本文」はすべて必須です。"); return; }
       showError("");
-      (async function () {
-        showToast("保存しています…");
-        try {
-          await apiPost("updateAnnouncement", { id: id, date: date, title: title, body: body });
-          state.editingAnn = null;
-          showToast("保存しました");
-        } catch (e) {
-          showToast("保存に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-        }
-        await loadData();
-      })();
+      state.editingAnn = null;
+      showToast("保存しています…");
+      runWrite_(function () {
+        return apiPost("updateAnnouncement", { id: id, date: date, title: title, body: body });
+      }, "保存しました", "保存に失敗しました");
       return;
     }
     if (btn.dataset.saveLink) {
@@ -856,17 +867,11 @@
       if (!title2 || !url2) { showError("リンクの「タイトル」と「URL」は必須です。"); return; }
       if (!/^https?:\/\//.test(url2)) { showError("URLは http:// または https:// から始めてください。"); return; }
       showError("");
-      (async function () {
-        showToast("保存しています…");
-        try {
-          await apiPost("updateLink", { id: lid, title: title2, url: url2, description: desc2 });
-          state.editingLink = null;
-          showToast("保存しました");
-        } catch (e) {
-          showToast("保存に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-        }
-        await loadData();
-      })();
+      state.editingLink = null;
+      showToast("保存しています…");
+      runWrite_(function () {
+        return apiPost("updateLink", { id: lid, title: title2, url: url2, description: desc2 });
+      }, "保存しました", "保存に失敗しました");
       return;
     }
   });
@@ -884,14 +889,10 @@
     }
     showError("");
     showToast("投稿しています…");
-    try {
-      await apiPost("addAnnouncement", { id: "ann-" + Date.now(), date: date, title: title, body: body, order: nextOrder_(state.announcements) });
-      $("annTitle").value = ""; $("annBody").value = ""; $("annDate").value = todayISO();
-      showToast("投稿しました");
-    } catch (e) {
-      showToast("投稿に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-    }
-    await loadData();
+    await runWrite_(function () {
+      return apiPost("addAnnouncement", { id: "ann-" + Date.now(), date: date, title: title, body: body, order: nextOrder_(state.announcements) });
+    }, "投稿しました", "投稿に失敗しました");
+    $("annTitle").value = ""; $("annBody").value = ""; $("annDate").value = todayISO();
   });
 
   $("linkAddBtn").addEventListener("click", async function () {
@@ -908,14 +909,10 @@
     }
     showError("");
     showToast("追加しています…");
-    try {
-      await apiPost("addLink", { id: "link-" + Date.now(), title: title, url: url, description: desc, order: nextOrder_(state.links) });
-      $("linkTitle").value = ""; $("linkUrl").value = ""; $("linkDesc").value = "";
-      showToast("追加しました");
-    } catch (e) {
-      showToast("追加に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
-    }
-    await loadData();
+    await runWrite_(function () {
+      return apiPost("addLink", { id: "link-" + Date.now(), title: title, url: url, description: desc, order: nextOrder_(state.links) });
+    }, "追加しました", "追加に失敗しました");
+    $("linkTitle").value = ""; $("linkUrl").value = ""; $("linkDesc").value = "";
   });
 
   // ==============================================================
