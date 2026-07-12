@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>種智院大学社会福祉士国家試験 対策ポータル</title>
+<title>社会福祉士国家試験 対策ポータル</title>
 <style>
   :root {
     --green-700: #047857;
@@ -73,6 +73,13 @@
     text-align: center; font-size: 12.5px; font-weight: 600; padding: 6px 12px;
   }
   body.admin .admin-banner, .portal.admin .admin-banner { display: block; }
+
+  .config-warning {
+    display: none; background: #fef2f2; border-bottom: 1px solid #fecaca;
+    color: var(--red-600); text-align: center; font-size: 12px; font-weight: 600;
+    padding: 8px 12px;
+  }
+  .config-warning.show { display: block; }
 
   /* ---------- カウントダウン ---------- */
   .countdown {
@@ -171,15 +178,18 @@
     min-height: 44px; justify-content: center;
   }
   .btn-primary:hover { background: var(--green-700); }
-  .del-btn, .edit-btn {
+  .del-btn, .edit-btn, .move-btn {
     background: none; border: none; cursor: pointer; color: var(--slate-400);
     font-size: 17px; padding: 8px; border-radius: 8px; flex-shrink: 0;
     width: 40px; height: 40px; display: none; align-items: center; justify-content: center;
     transition: color .15s, background .15s;
   }
-  .portal.admin .del-btn, .portal.admin .edit-btn { display: inline-flex; }
+  .portal.admin .del-btn, .portal.admin .edit-btn, .portal.admin .move-btn { display: inline-flex; }
   .del-btn:hover { color: var(--red-600); background: var(--red-50); }
   .edit-btn:hover { color: var(--green-700); background: var(--green-50); }
+  .move-btn { font-size: 13px; }
+  .move-btn:hover:not(:disabled) { color: var(--green-700); background: var(--green-50); }
+  .move-btn:disabled { opacity: .3; cursor: default; }
   .card-actions { display: flex; gap: 2px; flex-shrink: 0; }
   .link-card .card-actions {
     border-top: 1px solid var(--slate-100, #f1f5f9); justify-content: flex-end;
@@ -311,6 +321,10 @@
     <div class="admin-banner">管理者モードで操作中 — 編集が終わったら ⚙ からログアウトしてください</div>
   </header>
 
+  <div class="config-warning" id="configWarning">
+    ⚠️ Googleスプレッドシートが未接続です。表示中はサンプルデータで、追加・編集・削除は保存されません（WEBAPP_URLの設定が必要です）
+  </div>
+
   <!-- ================= カウントダウン ================= -->
   <section class="countdown" aria-label="試験日カウントダウン">
     <p class="label">第39回 社会福祉士国家試験（2027年2月7日）まで</p>
@@ -433,24 +447,29 @@
   // ==============================================================
   // 設定
   // ==============================================================
-  var ADMIN_PASSWORD = "1969";           // 管理者パスワード
-  var STORAGE_KEY = "sw-exam-portal-shared-v1";
+  var ADMIN_PASSWORD = "1969";           // 管理者パスワード（Apps Script側と同じ値にすること）
   var EXAM_DATE = new Date("2027-02-07T00:00:00+09:00");
 
-  // 初期表示データ（保存データがない場合に表示）
+  // Googleスプレッドシート連携用のWebアプリURL（.../exec で終わるもの）
+  // 「google-apps-script.gs」の手順でデプロイしたあと、ここに貼り付けてください
+  var WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxpemt0lgniC16lnrKS8n2DJucI60iigFl0HdQ4RvZJx_fF1KXT6WtSWgF1Lbj5VNvxhg/exec"; // 例: "https://script.google.com/macros/s/xxxxxxxx/exec"
+
+  // 初期表示データ（WEBAPP_URL未設定時、または通信に失敗した場合に表示）
   var DEFAULT_DATA = {
     links: [
       {
         id: "link-1",
         title: "共通科目一問一答アプリ",
         url: "https://example.com/quiz",
-        description: "共通科目の重要ポイントを○×形式でスキマ時間にチェックできます。"
+        description: "共通科目の重要ポイントを○×形式でスキマ時間にチェックできます。",
+        order: 1
       },
       {
         id: "link-2",
         title: "福祉サービスの組織と経営 要点まとめ",
         url: "https://example.com/matome",
-        description: "頻出テーマを図表つきで整理。試験直前の総復習に。"
+        description: "頻出テーマを図表つきで整理。試験直前の総復習に。",
+        order: 2
       }
     ],
     announcements: [
@@ -458,13 +477,15 @@
         id: "ann-1",
         date: "2026-07-10",
         title: "模擬試験の申し込み受付を開始しました",
-        body: "第1回学内模擬試験の申し込みを受け付けています。締切や会場の詳細は掲示板・履修システムのお知らせを確認してください。"
+        body: "第1回学内模擬試験の申し込みを受け付けています。締切や会場の詳細は掲示板・履修システムのお知らせを確認してください。",
+        order: 1
       },
       {
         id: "ann-2",
         date: "2026-07-01",
         title: "対策サイトを開設しました",
-        body: "第39回社会福祉士国家試験に向けた学習支援ポータルを開設しました。学習アプリやお知らせを随時追加していきます。"
+        body: "第39回社会福祉士国家試験に向けた学習支援ポータルを開設しました。学習アプリやお知らせを随時追加していきます。",
+        order: 2
       }
     ]
   };
@@ -473,6 +494,7 @@
     links: DEFAULT_DATA.links.slice(),
     announcements: DEFAULT_DATA.announcements.slice(),
     admin: false,
+    adminPassword: null,   // ログイン中のみメモリ上に保持（サーバーへの書き込み確認に使用）
     editingAnn: null,
     editingLink: null
   };
@@ -561,39 +583,92 @@
   setInterval(tick, 1000);
 
   // ==============================================================
-  // 共有ストレージへの読み込み・保存
-  //   shared: true … 管理者が保存した内容が全ユーザーの画面に反映される
+  // Googleスプレッドシート（Apps Script Webアプリ）との通信
+  //   ・GET  : 全員が閲覧時にデータを取得（パスワード不要）
+  //   ・POST : 管理者モードでの追加・編集・削除（パスワードをサーバー側でも検証）
+  //   ※ WEBAPP_URL が未設定の場合は、通信を行わずサンプルデータのみ表示する
   // ==============================================================
-  async function loadData() {
-    try {
-      var result = await window.storage.get(STORAGE_KEY, true);
-      if (result && result.value) {
-        var data = JSON.parse(result.value);
-        if (Array.isArray(data.links)) state.links = data.links;
-        if (Array.isArray(data.announcements)) state.announcements = data.announcements;
-      }
-    } catch (e) {
-      // 保存データがまだ無い場合は初期データを表示
-    }
-    render();
+  var isConfigured = !!WEBAPP_URL;
+
+  async function apiGet() {
+    if (!isConfigured) throw new Error("WEBAPP_URLが未設定です");
+    var res = await fetch(WEBAPP_URL, { method: "GET" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    return data;
   }
 
-  async function saveData() {
-    if (!window.storage || typeof window.storage.set !== "function") {
-      showToast("保存機能が利用できない環境です（変更は一時的な表示のみ）");
+  async function apiPost(action, payload) {
+    if (!isConfigured) throw new Error("WEBAPP_URLが未設定のため保存できません");
+    // Content-Type を text/plain にすることで、Apps Script側で発生しがちな
+    // CORSプリフライト（事前確認リクエスト）の失敗を避けている
+    var res = await fetch(WEBAPP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: action, password: state.adminPassword, payload: payload || {} })
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    if (!data.success) throw new Error(data.message || "サーバーがエラーを返しました");
+    return data;
+  }
+
+  async function loadData() {
+    if (!isConfigured) {
+      showToast("Googleスプレッドシート未接続のため、サンプルデータを表示しています");
+      sortByOrder_();
+      render();
       return;
     }
     try {
-      await window.storage.set(
-        STORAGE_KEY,
-        JSON.stringify({ links: state.links, announcements: state.announcements }),
-        true
-      );
-      showToast("保存しました");
+      var data = await apiGet();
+      if (Array.isArray(data.links)) state.links = data.links;
+      if (Array.isArray(data.announcements)) state.announcements = data.announcements;
     } catch (e) {
-      console.error("保存エラー:", e);
-      showToast("保存に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+      console.warn("読み込みエラー（サンプルデータを表示します）:", e);
+      showToast("スプレッドシートの読み込みに失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
     }
+    sortByOrder_();
+    render();
+  }
+
+  function sortByOrder_() {
+    function byOrder(a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); }
+    state.links.sort(byOrder);
+    state.announcements.sort(byOrder);
+  }
+
+  function nextOrder_(list) {
+    if (!list.length) return 1;
+    return Math.max.apply(null, list.map(function (x) { return Number(x.order) || 0; })) + 1;
+  }
+
+  // 表示順の入れ替え（dir: -1で上へ、+1で下へ）
+  async function moveItem_(list, id, dir, updateAction) {
+    var idx = list.findIndex(function (x) { return x.id === id; });
+    var swapIdx = idx + dir;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= list.length) return;
+
+    var a = list[idx], b = list[swapIdx];
+    var orderA = a.order, orderB = b.order;
+
+    if (!isConfigured) {
+      a.order = orderB;
+      b.order = orderA;
+      sortByOrder_();
+      render();
+      return;
+    }
+
+    showToast("並び替えています…");
+    try {
+      await apiPost(updateAction, Object.assign({}, a, { order: orderB }));
+      await apiPost(updateAction, Object.assign({}, b, { order: orderA }));
+      showToast("並び替えました");
+    } catch (e) {
+      showToast("並び替えに失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+    }
+    await loadData();
   }
 
   // ==============================================================
@@ -605,7 +680,7 @@
     if (state.announcements.length === 0) {
       annList.innerHTML = '<p class="empty-msg">現在、お知らせはありません。</p>';
     } else {
-      annList.innerHTML = state.announcements.map(function (a) {
+      annList.innerHTML = state.announcements.map(function (a, i) {
         if (state.editingAnn === a.id) {
           return (
             '<article class="ann-card edit-form">' +
@@ -627,6 +702,8 @@
               '<p class="body">' + escapeHtml(a.body) + '</p>' +
             '</div>' +
             '<div class="card-actions">' +
+              '<button class="move-btn" data-move-up-ann="' + escapeHtml(a.id) + '" ' + (i === 0 ? 'disabled' : '') + ' aria-label="上に移動">▲</button>' +
+              '<button class="move-btn" data-move-down-ann="' + escapeHtml(a.id) + '" ' + (i === state.announcements.length - 1 ? 'disabled' : '') + ' aria-label="下に移動">▼</button>' +
               '<button class="edit-btn" data-edit-ann="' + escapeHtml(a.id) + '" aria-label="お知らせ「' + escapeHtml(a.title) + '」を編集">✎</button>' +
               '<button class="del-btn" data-del-ann="' + escapeHtml(a.id) + '" aria-label="お知らせ「' + escapeHtml(a.title) + '」を削除">🗑</button>' +
             '</div>' +
@@ -640,7 +717,7 @@
     if (state.links.length === 0) {
       grid.innerHTML = '<p class="empty-msg" style="grid-column:1/-1;">登録されているアプリはまだありません。</p>';
     } else {
-      grid.innerHTML = state.links.map(function (l) {
+      grid.innerHTML = state.links.map(function (l, i) {
         if (state.editingLink === l.id) {
           return (
             '<div class="link-card edit-form">' +
@@ -665,6 +742,8 @@
             '</a>' +
             '<span class="ext">↗</span>' +
             '<div class="card-actions">' +
+              '<button class="move-btn" data-move-up-link="' + escapeHtml(l.id) + '" ' + (i === 0 ? 'disabled' : '') + ' aria-label="上に移動">▲</button>' +
+              '<button class="move-btn" data-move-down-link="' + escapeHtml(l.id) + '" ' + (i === state.links.length - 1 ? 'disabled' : '') + ' aria-label="下に移動">▼</button>' +
               '<button class="edit-btn" data-edit-link="' + escapeHtml(l.id) + '" aria-label="リンク「' + escapeHtml(l.title) + '」を編集">✎</button>' +
               '<button class="del-btn" data-del-link="' + escapeHtml(l.id) + '" aria-label="リンク「' + escapeHtml(l.title) + '」を削除">🗑</button>' +
             '</div>' +
@@ -677,30 +756,55 @@
   // 削除・編集・保存・キャンセル（イベント委譲）
   var ACTION_SELECTOR =
     "[data-del-ann],[data-del-link],[data-edit-ann],[data-edit-link]," +
-    "[data-save-ann],[data-save-link],[data-cancel-ann],[data-cancel-link]";
+    "[data-save-ann],[data-save-link],[data-cancel-ann],[data-cancel-link]," +
+    "[data-move-up-ann],[data-move-down-ann],[data-move-up-link],[data-move-down-link]";
 
   document.addEventListener("click", function (e) {
     var btn = e.target.closest ? e.target.closest(ACTION_SELECTOR) : null;
-    if (!btn || !state.admin) return;
+    if (!btn || !state.admin || btn.disabled) return;
+
+    // ---- 並び替え ----
+    if (btn.dataset.moveUpAnn || btn.dataset.moveDownAnn) {
+      var annId = btn.dataset.moveUpAnn || btn.dataset.moveDownAnn;
+      var dir = btn.dataset.moveUpAnn ? -1 : 1;
+      moveItem_(state.announcements, annId, dir, "updateAnnouncement");
+      return;
+    }
+    if (btn.dataset.moveUpLink || btn.dataset.moveDownLink) {
+      var linkId = btn.dataset.moveUpLink || btn.dataset.moveDownLink;
+      var dir2 = btn.dataset.moveUpLink ? -1 : 1;
+      moveItem_(state.links, linkId, dir2, "updateLink");
+      return;
+    }
 
     // ---- 削除 ----
     if (btn.dataset.delAnn) {
       var a = state.announcements.find(function (x) { return x.id === btn.dataset.delAnn; });
-      askConfirm('お知らせ「' + (a ? a.title : "") + '」を削除しますか？').then(function (ok) {
+      askConfirm('お知らせ「' + (a ? a.title : "") + '」を削除しますか？').then(async function (ok) {
         if (!ok) return;
-        state.announcements = state.announcements.filter(function (x) { return x.id !== btn.dataset.delAnn; });
-        render();
-        saveData();
+        showToast("削除しています…");
+        try {
+          await apiPost("deleteAnnouncement", { id: btn.dataset.delAnn });
+          showToast("削除しました");
+        } catch (e) {
+          showToast("削除に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+        }
+        await loadData();
       });
       return;
     }
     if (btn.dataset.delLink) {
       var l = state.links.find(function (x) { return x.id === btn.dataset.delLink; });
-      askConfirm('「' + (l ? l.title : "") + '」を削除しますか？').then(function (ok) {
+      askConfirm('「' + (l ? l.title : "") + '」を削除しますか？').then(async function (ok) {
         if (!ok) return;
-        state.links = state.links.filter(function (x) { return x.id !== btn.dataset.delLink; });
-        render();
-        saveData();
+        showToast("削除しています…");
+        try {
+          await apiPost("deleteLink", { id: btn.dataset.delLink });
+          showToast("削除しました");
+        } catch (e) {
+          showToast("削除に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+        }
+        await loadData();
       });
       return;
     }
@@ -731,13 +835,18 @@
       var dateEl = $("edit-ann-date-" + id), titleEl = $("edit-ann-title-" + id), bodyEl = $("edit-ann-body-" + id);
       var date = dateEl.value, title = titleEl.value.trim(), body = bodyEl.value.trim();
       if (!date || !title || !body) { showError("お知らせの「日付」「タイトル」「本文」はすべて必須です。"); return; }
-      var idx = state.announcements.findIndex(function (x) { return x.id === id; });
-      if (idx !== -1) state.announcements[idx] = { id: id, date: date, title: title, body: body };
-      state.announcements.sort(function (x, y) { return x.date < y.date ? 1 : -1; });
-      state.editingAnn = null;
       showError("");
-      render();
-      saveData();
+      (async function () {
+        showToast("保存しています…");
+        try {
+          await apiPost("updateAnnouncement", { id: id, date: date, title: title, body: body });
+          state.editingAnn = null;
+          showToast("保存しました");
+        } catch (e) {
+          showToast("保存に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+        }
+        await loadData();
+      })();
       return;
     }
     if (btn.dataset.saveLink) {
@@ -746,12 +855,18 @@
       var title2 = titleEl2.value.trim(), url2 = urlEl2.value.trim(), desc2 = descEl2.value.trim();
       if (!title2 || !url2) { showError("リンクの「タイトル」と「URL」は必須です。"); return; }
       if (!/^https?:\/\//.test(url2)) { showError("URLは http:// または https:// から始めてください。"); return; }
-      var lidx = state.links.findIndex(function (x) { return x.id === lid; });
-      if (lidx !== -1) state.links[lidx] = { id: lid, title: title2, url: url2, description: desc2 };
-      state.editingLink = null;
       showError("");
-      render();
-      saveData();
+      (async function () {
+        showToast("保存しています…");
+        try {
+          await apiPost("updateLink", { id: lid, title: title2, url: url2, description: desc2 });
+          state.editingLink = null;
+          showToast("保存しました");
+        } catch (e) {
+          showToast("保存に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+        }
+        await loadData();
+      })();
       return;
     }
   });
@@ -759,7 +874,7 @@
   // ==============================================================
   // 追加処理
   // ==============================================================
-  $("annAddBtn").addEventListener("click", function () {
+  $("annAddBtn").addEventListener("click", async function () {
     var date = $("annDate").value;
     var title = $("annTitle").value.trim();
     var body = $("annBody").value.trim();
@@ -767,15 +882,19 @@
       showError("お知らせの「日付」「タイトル」「本文」はすべて必須です。");
       return;
     }
-    state.announcements.unshift({ id: "ann-" + Date.now(), date: date, title: title, body: body });
-    state.announcements.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    $("annTitle").value = ""; $("annBody").value = ""; $("annDate").value = todayISO();
     showError("");
-    render();
-    saveData();
+    showToast("投稿しています…");
+    try {
+      await apiPost("addAnnouncement", { id: "ann-" + Date.now(), date: date, title: title, body: body, order: nextOrder_(state.announcements) });
+      $("annTitle").value = ""; $("annBody").value = ""; $("annDate").value = todayISO();
+      showToast("投稿しました");
+    } catch (e) {
+      showToast("投稿に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+    }
+    await loadData();
   });
 
-  $("linkAddBtn").addEventListener("click", function () {
+  $("linkAddBtn").addEventListener("click", async function () {
     var title = $("linkTitle").value.trim();
     var url = $("linkUrl").value.trim();
     var desc = $("linkDesc").value.trim();
@@ -787,11 +906,16 @@
       showError("URLは http:// または https:// から始めてください。");
       return;
     }
-    state.links.unshift({ id: "link-" + Date.now(), title: title, url: url, description: desc });
-    $("linkTitle").value = ""; $("linkUrl").value = ""; $("linkDesc").value = "";
     showError("");
-    render();
-    saveData();
+    showToast("追加しています…");
+    try {
+      await apiPost("addLink", { id: "link-" + Date.now(), title: title, url: url, description: desc, order: nextOrder_(state.links) });
+      $("linkTitle").value = ""; $("linkUrl").value = ""; $("linkDesc").value = "";
+      showToast("追加しました");
+    } catch (e) {
+      showToast("追加に失敗しました：" + (e && e.message ? e.message : "不明なエラー"));
+    }
+    await loadData();
   });
 
   // ==============================================================
@@ -799,6 +923,7 @@
   // ==============================================================
   function setAdmin(on) {
     state.admin = on;
+    if (!on) state.adminPassword = null;
     $("portal").classList.toggle("admin", on);
     $("gearBtn").classList.toggle("admin-on", on);
     if (!on) showError("");
@@ -814,6 +939,7 @@
 
   function tryLogin() {
     if ($("pwInput").value === ADMIN_PASSWORD) {
+      state.adminPassword = $("pwInput").value; // サーバー側の書き込み確認にも使用
       closePwModal();
       setAdmin(true);
       showToast("管理者モードに切り替えました");
@@ -842,12 +968,36 @@
   });
   $("amResetBtn").addEventListener("click", function () {
     $("adminMenuModal").classList.remove("open");
-    askConfirm("追加・削除した内容をすべて破棄して、初期データに戻します。よろしいですか？").then(function (ok) {
+    var msg = isConfigured
+      ? "スプレッドシート上の現在のリンク・お知らせをすべて削除し、サンプルデータに戻します。よろしいですか？（元に戻せません）"
+      : "追加・削除した内容をすべて破棄して、初期データに戻します。よろしいですか？";
+    askConfirm(msg).then(async function (ok) {
       if (!ok) return;
-      state.links = DEFAULT_DATA.links.slice();
-      state.announcements = DEFAULT_DATA.announcements.slice();
-      render();
-      saveData();
+      if (!isConfigured) {
+        state.links = DEFAULT_DATA.links.slice();
+        state.announcements = DEFAULT_DATA.announcements.slice();
+        render();
+        return;
+      }
+      showToast("初期化しています…（少し時間がかかります）");
+      try {
+        for (var i = 0; i < state.links.length; i++) {
+          await apiPost("deleteLink", { id: state.links[i].id });
+        }
+        for (var j = 0; j < state.announcements.length; j++) {
+          await apiPost("deleteAnnouncement", { id: state.announcements[j].id });
+        }
+        for (var k = 0; k < DEFAULT_DATA.links.length; k++) {
+          await apiPost("addLink", DEFAULT_DATA.links[k]);
+        }
+        for (var m = 0; m < DEFAULT_DATA.announcements.length; m++) {
+          await apiPost("addAnnouncement", DEFAULT_DATA.announcements[m]);
+        }
+        showToast("初期データに戻しました");
+      } catch (e) {
+        showToast("初期化中にエラーが発生しました：" + (e && e.message ? e.message : "不明なエラー"));
+      }
+      await loadData();
     });
   });
   $("adminMenuModal").addEventListener("click", function (e) { if (e.target === this) this.classList.remove("open"); });
@@ -856,8 +1006,9 @@
   // 初期化
   // ==============================================================
   $("annDate").value = todayISO();
+  if (!isConfigured) $("configWarning").classList.add("show");
   render();      // まず初期データを表示
-  loadData();    // 保存データがあれば置き換え
+  loadData();    // Googleスプレッドシートに接続済みならデータを取得して置き換え
 })();
 </script>
 </body>
