@@ -517,10 +517,12 @@
   }
 
   function todayISO() {
-    var d = new Date();
-    return d.getFullYear() + "-" +
-      String(d.getMonth() + 1).padStart(2, "0") + "-" +
-      String(d.getDate()).padStart(2, "0");
+    // 見ている人の端末のタイムゾーンに関わらず、常に日本時間(JST, UTC+9)基準で
+    // 「今日」の日付を求める（UTC時刻に9時間を足し、UTC成分として読み取る）
+    var jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    return jst.getUTCFullYear() + "-" +
+      String(jst.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(jst.getUTCDate()).padStart(2, "0");
   }
 
   function showToast(msg) {
